@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>複数プレイリストUI（右に動画）</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    margin: 0;
+    display: flex;
+    height: 100vh;
+    background: #f7f7f9;
+    color: #222;
+  }
+
+  #sidebar {
+    width: 380px;
+    overflow-y: auto;
+    border-right: 1px solid #ddd;
+    padding: 10px;
+    background: #fff;
+  }
+  .playlist { margin-bottom: 20px; }
+  .playlist-title {
+    font-weight: bold;
+    cursor: pointer;
+    margin-bottom: 10px;
+    padding: 8px 10px;
+    background: #eee;
+    border-radius: 6px;
+    user-select: none;
+  }
+  .playlist-title:hover { background: #e2e2e2; }
+  .videos { display: none; margin-left: 4px; margin-top: 8px; }
+  .video {
+    margin: 8px 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px;
+    border-radius: 8px;
+  }
+  .video:hover { background: #f0f0f5; }
+  .video .thumb-wrap {
+    position: relative;
+    flex-shrink: 0;
+    cursor: pointer;
+  }
+  .video img {
+    width: 130px;
+    height: 73px;
+    object-fit: cover;
+    border-radius: 6px;
+    display: block;
+    background: #ccc;
+  }
+  .video .title {
+    font-size: 11px;
+    line-height: 1.3;
+    margin-top: 4px;
+    max-width: 130px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    color: #444;
+  }
+  .video .right {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+  }
+  .play-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 1px solid #ccc;
+    background: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    color: #333;
+    flex-shrink: 0;
+  }
+  .play-btn:hover { background: #333; color: #fff; border-color: #333; }
+  .video.playing .play-btn { background: #333; color: #fff; border-color: #333; }
+  .video.playing img { outline: 2px solid #333; outline-offset: 2px; }
+
+  #sidebar.thumbs-hidden .video img { display: none; }
+  #sidebar.thumbs-hidden .thumb-wrap {
+    width: 130px;
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #sidebar.thumbs-hidden .video .title {
+    -webkit-line-clamp: 3;
+    text-align: center;
+  }
+
+  #sidebar-controls {
+    position: sticky;
+    top: 0;
+    background: #fff;
+    padding: 4px 0 10px;
+    z-index: 2;
+  }
+  #thumbBtn {
+    padding: 6px 12px;
+    font-size: 12px;
+    border: 1px solid #ccc;
+    background: #fff;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  #thumbBtn:hover { background: #f0f0f0; }
+  #thumbBtn.active { background: #333; color: #fff; border-color: #333; }
+
+  .loading-note {
+    font-size: 11px;
+    color: #999;
+    padding: 4px 10px;
+  }
+
+  #player-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    padding: 20px;
+  }
+  #controls {
+    position: absolute;
+    top: 16px;
+    right: 20px;
+    z-index: 20;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  #hideBtn, #speedBtn {
+    padding: 8px 14px;
+    font-size: 13px;
+    border: 1px solid #ccc;
+    background: #fff;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  #hideBtn:hover, #speedBtn:hover { background: #f0f0f0; }
+  #hideBtn.active {
+    background: #333;
+    color: #fff;
+    border-color: #333;
+  }
+
+  #speed-wrap {
+    position: relative;
+  }
+  #speed-menu {
+    position: absolute;
+    top: 42px;
+    right: 0;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+    padding: 8px;
+    display: none;
+    z-index: 21;
+    min-width: 120px;
+  }
+  #speed-menu button {
+    display: block;
+    width: 100%;
+    border: none;
+    background: transparent;
+    text-align: left;
+    padding: 8px 10px;
+    cursor: pointer;
+    border-radius: 6px;
+    font-size: 13px;
+  }
+  #speed-menu button:hover {
+    background: #f0f0f0;
+  }
+  #speed-menu button.active {
+    background: #333;
+    color: #fff;
+  }
+
+  #player-wrap {
+    width: 80%;
+    height: 80%;
+    position: relative;
+    background: #000;
+    overflow: hidden;
+    border-radius: 10px;
+  }
+
+  #player {
+    width: 100%;
+    height: 100%;
+    position: relative;
+  }
+  #player iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+  }
+
+  /* 非表示時：映像全体を完全に黒マスクで覆う（強化版） */
+  .video-mask {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    display: none;
+    z-index: 5;
+    pointer-events: none;
+  }
+  #player-area.video-hidden .video-mask {
+    display: block;
+  }
+
+  .hidden-label {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 40%;
+    text-align: center;
+    color: rgba(255,255,255,0.55);
+    font-size: 13px;
+    z-index: 6;
+    display: none;
+    pointer-events: none;
+  }
+  #player-area.video-hidden .hidden-label {
+    display: block;
+  }
+
+  /* 非表示中に使うカスタムコントロールバー */
+  #custom-controls {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 7;
+    display: none;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 14px 12px;
+    background: linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0));
+  }
+  #player-area.video-hidden #custom-controls {
+    display: flex;
+  }
+  #custom-controls .row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  #ccPlayBtn {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.5);
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+    cursor: pointer;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  #ccPlayBtn:hover { background: rgba(255,255,255,0.25); }
+  #ccSeek {
+    flex: 1;
+    accent-color: #fff;
+    cursor: pointer;
+  }
+  #ccTime {
+    color: rgba(255,255,255,0.85);
+    font-size: 11px;
+    min-width: 92px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+  #ccVol {
+    width: 70px;
+    accent-color: #fff;
+    cursor: pointer;
+  }
+  #ccVolIcon {
+    color: rgba(255,255,255,0.85);
+    font-size: 13px;
+    flex-shrink: 0;
+    cursor: pointer;
+  }
+
+  #placeholder {
+    color: #888;
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+<div id="sidebar">
+  <div id="sidebar-controls">
+    <button id="thumbBtn" onclick="toggleThumbs()">サムネイルを非表示にする</button>
+  </div>
+  <div class="playlist">
+    <div class="playlist-title" onclick="toggle('list1')">再生リスト①</div>
+    <div class="videos" id="list1"></div>
+  </div>
+  <div class="playlist">
+    <div class="playlist-title" onclick="toggle('list2')">再生リスト②</div>
+    <div class="videos" id="list2"></div>
+  </div>
+  <div class="playlist">
+    <div class="playlist-title" onclick="toggle('list3')">asmrmayona（チャンネル動画）</div>
+    <div class="loading-note" id="list3-note">読み込み中...</div>
+    <div class="videos" id="list3"></div>
+  </div>
+</div>
+
+<div id="player-area">
+  <div id="controls">
+    <div id="speed-wrap">
+      <button id="speedBtn" onclick="toggleSpeedMenu()">倍速</button>
+      <div id="speed-menu">
+        <button onclick="setSpeed(0.5)">0.5x</button>
+        <button onclick="setSpeed(0.75)">0.75x</button>
+        <button onclick="setSpeed(1)">1x</button>
+        <button onclick="setSpeed(1.25)">1.25x</button>
+        <button onclick="setSpeed(1.5)">1.5x</button>
+        <button onclick="setSpeed(2)">2x</button>
+      </div>
+    </div>
+    <button id="hideBtn" onclick="toggleHide()">動画を非表示にする</button>
+  </div>
+
+  <div id="player-wrap">
+    <div id="player"></div>
+    <div class="video-mask"></div>
+    <div class="hidden-label">動画は非表示です（下のバーで操作できます）</div>
+    <div id="custom-controls">
+      <div class="row">
+        <button id="ccPlayBtn" onclick="ccTogglePlay()">▶</button>
+        <input id="ccSeek" type="range" min="0" max="1000" value="0" oninput="ccOnSeekInput()" onchange="ccOnSeekCommit()">
+        <span id="ccTime">0:00 / 0:00</span>
+      </div>
+      <div class="row">
+        <span id="ccVolIcon" onclick="ccToggleMute()">🔊</span>
+        <input id="ccVol" type="range" min="0" max="100" value="100" oninput="ccOnVolInput()">
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://www.youtube.com/iframe_api"></script>
+<script>
+const API_KEY = "AIzaSyAxk1YpQSe-qDtFUSUmnjnduanag41Mlyk";
+const playlists = [
+  { id: "PLsHj_P-wUyYnbIgioZx3iat9EzihpACzw", elementId: "list1" },
+  { id: "PLExT6MVBKs2ByGv9EDeiNSuMZYnFr72Gn", elementId: "list2" }
+];
+const CHANNEL_HANDLE = "asmrmayona";
+
+let currentVideoId = null;
+let isHidden = false;
+let player = null;
+let ytReady = false;
+let selectedSpeed = 1;
+let progressTimer = null;
+let isSeeking = false;
+
+function onYouTubeIframeAPIReady() {
+  ytReady = true;
+  player = new YT.Player('player', {
+    width: '100%',
+    height: '100%',
+    videoId: '',
+    playerVars: {
+      autoplay: 0,
+      controls: 1,
+      rel: 0,
+      modestbranding: 1,
+      playsinline: 1
+    },
+    events: {
+      onReady: () => {
+        try { player.setPlaybackRate(selectedSpeed); } catch (e) {}
+      },
+      onStateChange: onPlayerStateChange
+    }
+  });
+}
+
+function onPlayerStateChange(e) {
+  const playing = e.data === YT.PlayerState.PLAYING;
+  document.getElementById('ccPlayBtn').textContent = playing ? '❚❚' : '▶';
+}
+
+/* ---------- プレイリスト読み込み ---------- */
+
+async function loadPlaylist(playlistId, elementId) {
+  const container = document.getElementById(elementId);
+  let items = [];
+  let pageToken = '';
+  try {
+    do {
+      const res = await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${playlistId}&key=${API_KEY}${pageToken ? '&pageToken=' + pageToken : ''}`);
+      const data = await res.json();
+      if (!data.items) break;
+      items = items.concat(data.items);
+      pageToken = data.nextPageToken || '';
+    } while (pageToken);
+  } catch (err) {
+    console.error('プレイリスト読み込み失敗:', err);
+  }
+
+  items.forEach(item => renderVideo(item, container));
+  return items;
+}
+
+async function loadChannelByHandle(handle, elementId) {
+  const note = document.getElementById(elementId + '-note');
+  try {
+    const chRes = await fetch(`https://www.googleapis.com/youtube/v3/channels?part=contentDetails&forHandle=${encodeURIComponent(handle)}&key=${API_KEY}`);
+    const chData = await chRes.json();
+    const uploadsId = chData.items && chData.items[0] && chData.items[0].contentDetails.relatedPlaylists.uploads;
+    if (!uploadsId) {
+      if (note) note.textContent = 'チャンネルが見つかりませんでした';
+      return;
+    }
+    await loadPlaylist(uploadsId, elementId);
+    if (note) note.remove();
+  } catch (err) {
+    console.error('チャンネル読み込み失敗:', err);
+    if (note) note.textContent = '読み込みに失敗しました';
+  }
+}
+
+function renderVideo(item, container) {
+  const videoId = item.snippet.resourceId.videoId;
+  const title = item.snippet.title;
+  const thumb =
+    (item.snippet.thumbnails &&
+      (item.snippet.thumbnails.medium?.url ||
+       item.snippet.thumbnails.default?.url)) || "";
+
+  const div = document.createElement("div");
+  div.className = "video";
+  div.dataset.videoId = videoId;
+
+  const thumbWrap = document.createElement("div");
+  thumbWrap.className = "thumb-wrap";
+
+  const img = document.createElement("img");
+  img.src = thumb;
+  img.alt = title;
+  img.loading = "lazy";
+
+  const titleEl = document.createElement("div");
+  titleEl.className = "title";
+  titleEl.textContent = title;
+
+  thumbWrap.appendChild(img);
+  thumbWrap.appendChild(titleEl);
+  thumbWrap.onclick = () => play(videoId, div);
+
+  const right = document.createElement("div");
+  right.className = "right";
+
+  const playBtn = document.createElement("button");
+  playBtn.className = "play-btn";
+  playBtn.textContent = "▶";
+  playBtn.title = "再生";
+  playBtn.onclick = () => play(videoId, div);
+
+  right.appendChild(playBtn);
+
+  div.appendChild(thumbWrap);
+  div.appendChild(right);
+  container.appendChild(div);
+}
+
+function toggle(id) {
+  const el = document.getElementById(id);
+  el.style.display = el.style.display === "block" ? "none" : "block";
+}
+
+/* ---------- 再生 ---------- */
+
+function play(id, el) {
+  currentVideoId = id;
+  document.querySelectorAll(".video.playing").forEach(v => v.classList.remove("playing"));
+  if (el) el.classList.add("playing");
+
+  if (player && ytReady) {
+    player.loadVideoById(id);
+    try { player.setPlaybackRate(selectedSpeed); } catch (e) {}
+    if (isHidden) {
+      player.playVideo();
+    }
+  }
+  updatePlayerState();
+}
+
+function updatePlayerState() {
+  const area = document.getElementById("player-area");
+
+  if (!currentVideoId) {
+    area.classList.remove("video-hidden");
+    stopProgressTracking();
+    return;
+  }
+
+  if (isHidden) {
+    area.classList.add("video-hidden");
+    startProgressTracking();
+  } else {
+    area.classList.remove("video-hidden");
+    stopProgressTracking();
+  }
+}
+
+function toggleThumbs() {
+  const sidebar = document.getElementById("sidebar");
+  const btn = document.getElementById("thumbBtn");
+  const hidden = sidebar.classList.toggle("thumbs-hidden");
+  btn.textContent = hidden ? "サムネイルを表示する" : "サムネイルを非表示にする";
+  btn.classList.toggle("active", hidden);
+}
+
+function toggleHide() {
+  isHidden = !isHidden;
+  const btn = document.getElementById("hideBtn");
+  btn.textContent = isHidden ? "動画を表示する" : "動画を非表示にする";
+  btn.classList.toggle("active", isHidden);
+  updatePlayerState();
+}
+
+function toggleSpeedMenu() {
+  const menu = document.getElementById("speed-menu");
+  menu.style.display = (menu.style.display === "block") ? "none" : "block";
+}
+
+function setSpeed(rate) {
+  selectedSpeed = rate;
+
+  const menu = document.getElementById("speed-menu");
+  menu.querySelectorAll("button").forEach(btn => btn.classList.remove("active"));
+  [...menu.querySelectorAll("button")].find(btn => btn.textContent === rate + "x")?.classList.add("active");
+
+  if (player && ytReady) {
+    try { player.setPlaybackRate(rate); } catch (e) {}
+  }
+
+  menu.style.display = "none";
+}
+
+document.addEventListener("click", (e) => {
+  const speedWrap = document.getElementById("speed-wrap");
+  if (!speedWrap.contains(e.target)) {
+    document.getElementById("speed-menu").style.display = "none";
+  }
+});
+
+/* ---------- 非表示中のカスタムコントロール ---------- */
+
+function formatTime(sec) {
+  if (!isFinite(sec) || sec < 0) sec = 0;
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function startProgressTracking() {
+  stopProgressTracking();
+  progressTimer = setInterval(() => {
+    if (!player || !ytReady || isSeeking) return;
+    try {
+      const dur = player.getDuration();
+      const cur = player.getCurrentTime();
+      if (dur > 0) {
+        document.getElementById('ccSeek').value = Math.floor((cur / dur) * 1000);
+        document.getElementById('ccTime').textContent = `${formatTime(cur)} / ${formatTime(dur)}`;
+      }
+      const state = player.getPlayerState();
+      document.getElementById('ccPlayBtn').textContent = (state === YT.PlayerState.PLAYING) ? '❚❚' : '▶';
+    } catch (e) {}
+  }, 400);
+}
+
+function stopProgressTracking() {
+  if (progressTimer) {
+    clearInterval(progressTimer);
+    progressTimer = null;
+  }
+}
+
+function ccTogglePlay() {
+  if (!player || !ytReady) return;
+  const state = player.getPlayerState();
+  if (state === YT.PlayerState.PLAYING) {
+    player.pauseVideo();
+  } else {
+    player.playVideo();
+  }
+}
+
+function ccOnSeekInput() {
+  isSeeking = true;
+  if (!player || !ytReady) return;
+  try {
+    const dur = player.getDuration();
+    const val = document.getElementById('ccSeek').value;
+    const target = (val / 1000) * dur;
+    document.getElementById('ccTime').textContent = `${formatTime(target)} / ${formatTime(dur)}`;
+  } catch (e) {}
+}
+
+function ccOnSeekCommit() {
+  if (!player || !ytReady) return;
+  try {
+    const dur = player.getDuration();
+    const val = document.getElementById('ccSeek').value;
+    const target = (val / 1000) * dur;
+    player.seekTo(target, true);
+  } catch (e) {}
+  isSeeking = false;
+}
+
+function ccOnVolInput() {
+  if (!player || !ytReady) return;
+  const vol = document.getElementById('ccVol').value;
+  try {
+    player.setVolume(vol);
+    if (vol > 0 && player.isMuted()) player.unMute();
+    document.getElementById('ccVolIcon').textContent = vol == 0 ? '🔇' : '🔊';
+  } catch (e) {}
+}
+
+function ccToggleMute() {
+  if (!player || !ytReady) return;
+  try {
+    if (player.isMuted()) {
+      player.unMute();
+      document.getElementById('ccVolIcon').textContent = '🔊';
+    } else {
+      player.mute();
+      document.getElementById('ccVolIcon').textContent = '🔇';
+    }
+  } catch (e) {}
+}
+
+/* ---------- 初期化 ---------- */
+
+playlists.forEach(p => loadPlaylist(p.id, p.elementId));
+loadChannelByHandle(CHANNEL_HANDLE, 'list3');
+updatePlayerState();
+</script>
+</body>
+</html>
